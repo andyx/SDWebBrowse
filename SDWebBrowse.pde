@@ -5,6 +5,10 @@
  * Some code is from Bill Greiman's SdFatLib examples, some is from the Arduino Ethernet
  * WebServer example and the rest is from Limor Fried (Adafruit) so its probably under GPL
  *
+ * andyx: Added simple root file support, see rootFileName below. 
+ *        Added simple Context-Type support for jpeg and gif images.
+ *        Deprecated ListFiles with addition of root file.
+ *
  * Tutorial is at http://www.ladyada.net/learn/arduino/ethfiles.html
  * Pull requests should go to http://github.com/adafruit/SDWebBrowse
  */
@@ -13,9 +17,9 @@
 #include <SdFatUtil.h>
 #include <Ethernet.h>
 
-/************ ETHERNET STUFF ************/
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 byte ip[] = { 192, 168, 1, 177 };
+char rootFileName[] = "index.htm"; 
 Server server(80);
 
 /************ SDCARD STUFF ************/
@@ -78,72 +82,15 @@ void setup() {
   server.begin();
 }
 
-void ListFiles(Client client, uint8_t flags) {
-  // This code is just copied from SdFile.cpp in the SDFat library
-  // and tweaked to print to the client output in html!
-  dir_t p;
-  
-  root.rewind();
-  client.println("<ul>");
-  while (root.readDir(p) > 0) {
-    // done if past last used entry
-    if (p.name[0] == DIR_NAME_FREE) break;
-
-    // skip deleted entry and entries for . and  ..
-    if (p.name[0] == DIR_NAME_DELETED || p.name[0] == '.') continue;
-
-    // only list subdirectories and files
-    if (!DIR_IS_FILE_OR_SUBDIR(&p)) continue;
-
-    // print any indent spaces
-    client.print("<li><a href=\"");
-    for (uint8_t i = 0; i < 11; i++) {
-      if (p.name[i] == ' ') continue;
-      if (i == 8) {
-        client.print('.');
-      }
-      client.print(p.name[i]);
-    }
-    client.print("\">");
-    
-    // print file name with possible blank fill
-    for (uint8_t i = 0; i < 11; i++) {
-      if (p.name[i] == ' ') continue;
-      if (i == 8) {
-        client.print('.');
-      }
-      client.print(p.name[i]);
-    }
-    
-    client.print("</a>");
-    
-    if (DIR_IS_SUBDIR(&p)) {
-      client.print('/');
-    }
-
-    // print modify date/time if requested
-    if (flags & LS_DATE) {
-       root.printFatDate(p.lastWriteDate);
-       client.print(' ');
-       root.printFatTime(p.lastWriteTime);
-    }
-    // print size if requested
-    if (!DIR_IS_SUBDIR(&p) && (flags & LS_SIZE)) {
-      client.print(' ');
-      client.print(p.fileSize);
-    }
-    client.println("</li>");
-  }
-  client.println("</ul>");
-}
-
 // How big our line buffer should be. 100 is plenty!
 #define BUFSIZ 100
 
 void loop()
 {
   char clientline[BUFSIZ];
+  char *filename;
   int index = 0;
+  int image = 0;
   
   Client client = server.available();
   if (client) {
@@ -171,25 +118,19 @@ void loop()
         
         // got a \n or \r new line, which means the string is done
         clientline[index] = 0;
+        filename = 0;
         
         // Print it out for debugging
         Serial.println(clientline);
         
         // Look for substring such as a request to get the root file
         if (strstr(clientline, "GET / ") != 0) {
-          // send a standard http response header
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println();
+          filename = rootFileName;
+        }
+        if (strstr(clientline, "GET /") != 0) {
+          // this time no space after the /, so a sub-file
           
-          // print all the files, use a helper to keep it clean
-          client.println("<h2>Files:</h2>");
-          ListFiles(client, LS_SIZE);
-        } else if (strstr(clientline, "GET /") != 0) {
-          // this time no space after the /, so a sub-file!
-          char *filename;
-          
-          filename = clientline + 5; // look after the "GET /" (5 chars)
+          if (!filename) filename = clientline + 5; // look after the "GET /" (5 chars)
           // a little trick, look for the " HTTP/1.1" string and 
           // turn the first character of the substring into a 0 to clear it out.
           (strstr(clientline, " HTTP"))[0] = 0;
@@ -206,13 +147,21 @@ void loop()
           }
           
           Serial.println("Opened!");
-                    
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/plain");
-          client.println();
           
+          client.println("HTTP/1.1 200 OK");
+          if (strstr(filename, ".htm") != 0)
+             client.println("Content-Type: text/html");
+          else if (strstr(filename, ".jpg") != 0)
+             client.println("Content-Type: image/jpeg");
+         else if (strstr(filename, ".gif") != 0)
+             client.println("Content-Type: image/gif");
+         else 
+             client.println("Content-Type: text");
+
+          client.println();
+                
           int16_t c;
-          while ((c = file.read()) > 0) {
+          while ((c = file.read()) >= 0) {
               // uncomment the serial to debug (slow!)
               //Serial.print((char)c);
               client.print((char)c);
@@ -233,3 +182,4 @@ void loop()
     client.stop();
   }
 }
+
