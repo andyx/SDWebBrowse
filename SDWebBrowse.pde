@@ -17,6 +17,7 @@
 #include <SdFatUtil.h>
 #include <Ethernet.h>
 
+/************ ETHERNET STUFF ************/
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 byte ip[] = { 192, 168, 1, 177 };
 char rootFileName[] = "index.htm"; 
@@ -90,7 +91,6 @@ void loop()
   char clientline[BUFSIZ];
   char *filename;
   int index = 0;
-  int image = 0;
   
   Client client = server.available();
   if (client) {
